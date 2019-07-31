@@ -1,0 +1,23 @@
+gloabl:
+    imageCredentials:
+        registry: "217273820646.dkr.ecr.us-east-1.amazonaws.com/62da55d2-e19f-4d6d-b78f-4957796d2480/cg-2481633156"
+        username: ""
+        password: ""
+    
+    image:
+        tag: "4.2.0"
+        pullPolicy: "Always"
+    
+    admin:
+        token:
+        password:
+    
+    db:
+        external:
+            enable: false
+            host:
+            username: "postgres"
+            password: 
+            port: 5432
+        internal:
+            pvsize: 50Gi

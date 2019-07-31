@@ -1,272 +1,343 @@
 <img src="https://avatars3.githubusercontent.com/u/12783832?s=200&v=4" height="100" width="100" /><img src="https://avatars3.githubusercontent.com/u/15859888?s=200&v=4" width="100" height="100"/>
 
-# Aqua Security Helm Charts
+# Aqua Container Security Platform (CSP) for Amazon EKS
 
-These are Helm charts for installation and maintenance of Aqua Container Security Platform Console, Database, Gateway, Scanner, and Enforcer components.
+This github repo retains the helm charts for Aqua Security's AWS EKS Marketplace offering. This readme includes reference documention regarding installation and removals while operating within AWS EKS.
 
-## Contents
+Installation is simple, as Cloud Native apps should be! There are minimal pre-requsites to attend to in order to deploy Aqua CSP on AWS EKS as defined below.
 
-- [Aqua Security Helm Charts](#aqua-security-helm-charts)
-  - [Contents](#contents)
-  - [Chart Details](#chart-details)
-  - [Prerequisites](#prerequisites)
-    - [Container Registry Credentials](#container-registry-credentials)
-    - [PostgreSQL database](#postgresql-database)
-    - [High-Volume Scanner Installation](#high-volume-scanner-installation)
-    - [Helm Customizations / Troubleshooting](#helm-customizations--troubleshooting)
-    - [Non-public cloud provider deployments](#non-public-cloud-provider-deployments)
-  - [Installing the Charts](#installing-the-charts)
-    - [Server (console)](#server-console)
-    - [Enforcer](#enforcer)
-    - [Scanner](#scanner)
-  - [Configurable Variables](#configurable-variables)
-    - [Console](#console)
-    - [Enforcer](#enforcer-1)
-    - [Scanner](#scanner-1)
-  - [Support](#support)
-
-## Chart Details
-
-This repository includes two charts that may be deployed separately:
-
-* [**Server**](server/) - deploys the Console, Gateway, and Database components, and optionally the Scanner component
-* [**Enforcer**](enforcer/) - deploys the Enforcer daemonset
-* [**Scanner**](scanner/) - deploys the aqua scanner cli deployment
+>**A word about helm**
+>
+>This is a basic deployment guide and not intended to cover all installation variations.
+>While Helm is a very easy tool to use, *Helm is not required.* Many other installation variations are available to customers with an `https://my.aquasec.com` account. Cloud Market specific documentation is located at `https://cloud-market-docs.aquasec.com`
 
 ## Prerequisites
 
-### Container Registry Credentials
+* A current installation of [Helm](https://helm.sh/)
+* EKS role binding appropriate for Helm's use
+* Database options
+* Extend EKS with a StorageClass that supports EBS
+* AWS MP Subscription to the [Aqua CSP EKS offer.](https://aws.amazon.com/marketplace/pp/B07KCNBW7B)
 
-The Aqua server (Console and Gateway) components are available in our private repository, which requires authentication. By default, the charts create a secret based on the values.yaml. 
+### Aquiring the charts
 
-First, create a new namespace named "aqua":
+The Aqua console components are non-FOSS, therefore this chart is not available in the Helm package repository. However, you may simply clone this repository and install via Helm from this collection.
 
-```bash
-kubectl create namespace aqua
+```shell
+git clone https://github.com/aquasecurity/aqua-helm.git -b aws-marketplace
 ```
 
-Next, **(Optional)** create the secret:
+### Helm EKS Role Binding
+
+#### Using helm with EKS requires providing a service account for use by tiller
+
+Run the following commands to create the requisite SA:
 
 ```bash
-kubectl create secret docker-registry csp-registry-secret  --docker-server="registry.aquasec.com" --namespace aqua --docker-username="jg@example.com" --docker-password="Truckin" --docker-email="jg@example.com"
+kubectl create serviceaccount --namespace kube-system tiller
+kubectl create clusterrolebinding tiller-cluster-rule --clusterrole=cluster-admin --serviceaccount=kube-system:tiller
+kubectl patch deploy --namespace kube-system tiller-deploy -p '{"spec":{"template":{"spec":{"serviceAccount":"tiller"}}}}'
 ```
+### Database Options
 
-### PostgreSQL database
-
-Aqua Security recommends implementing a highly-available PostgreSQL database. By default, the console chart will install a PostgreSQL database and attach it to persistent storage for POC usage and testing. For production use, one may override this default behavior and specify an existing PostgreSQL database by setting the following variables in values.yaml:
+This helm chart includes an Aqua provided PostgreSQL database container for small environments and/or testing scenerios. For production deployments Aqua recommends implementing a dedicated database such as Amazon RDS. The helm chart may be modified to utilize such an external instance by modifying the file *aqua-helm/aqua/values.yaml*, section *db.external* as in the example below.
 
 ```yaml
 db:
   external:
-    enabled: true
-    name: example-aquasec
-    host: aquasec-db
-    port: 5432
-    user: aquasec-db-username
-    password: verysecret
+      enable: true
+      host: "<myserver>.CB2XKFSFFMY7.US-WEST-2.RDS.AMAZONAWS.COM"
+      username: "postgres"
+      password: <Password>
+      port: 5432
 ```
 
-### High-Volume Scanner Installation
 
-Aqua CSP has the ability to deploy a scanning pod that is external to the Aqua Server. This dedicated scanning pod allows the Server to run unprivileged, and provides a high-throughput scanning queue anywhere you choose. To install the Scanner-CLI alongside the Server components, set the following variables in values.yaml:
+### Extend EKS with an EBS supported StorageClass
+
+If you are using an external PostgreSQL provider such as RDS this step is unnecessary.
+
+Per [AWS documentation](https://docs.aws.amazon.com/eks/latest/userguide/storage-classes.html)
+EKS does not ship with any StorageClasses. Included in the git repo is the file *aqua-helm/gp2-storage-class.yaml*. Apply this file to add support for EBS volumes and set the gp2 StorageClass as default for the cluster. Alternativly, edit the database chart to utilize your own StorageClass.
+
+```shell
+kubectl create -f gp2-storage-class.yaml
+```
+
+## Secrets and Service Account
+
+If you are deploying to EKS from the AWS Marketplace (AWS MP) directly, the following section describing the dockerImagePull secret/sa is unnecessary as AWS MP authorizes the image pull from the AWS MP ECR.
+
+The Aqua console components are hosted on a private repository: `registry.aquasec.com`. As such a service account and associated dockerImagePull secret are required to be created. The Helm chart does this for you. Edit the *aqua-helm/aqua/values.yaml* to include the credentials that were granted permission to download from Aqua Security's private repository. Many customers also utilize privatly hosted registries. If this is your scenerio, change the `registry:` variable to match as well.
 
 ```yaml
-scanner:
-  enabled: true
-scanner.replicas: "Set quantity"
+  imageCredentials:
+    registry: "registry.aquasec.com"
+    username: "example@aquasec.com"
+    password: "k8s4allis@sh0rtP@ssword"
 ```
 
-### Helm Customizations / Troubleshooting
+and in each chart you need to change the image in each values:
 
-***This section not all-inclusive. It includes information regarding common issues Aqua has encountered during deployments***
+**aqua-helm/aqua/charts/server/values.yaml**
 
-**Error:** *UPGRADE/INSTALL FAILED*, configmaps is forbidden.
+```yaml
+  db:
+    image: database
 
-  ```sh
-  Error: UPGRADE FAILED: configmaps is forbidden: User "system:serviceaccount:kube-system:default" cannot list configmaps in the namespace "kube-system"
-  ```
+  gate:
+    image: gateway
 
-**Solution:** Create a service account for Tiller to utilize.
-  ```sh
-  kubectl create serviceaccount --namespace kube-system tiller
-  kubectl create clusterrolebinding tiller-cluster-rule --clusterrole=cluster-admin --serviceaccount=kube-system:tiller
-  kubectl patch deploy --namespace kube-system tiller-deploy -p '{"spec":{"template":{"spec":{"serviceAccount":"tiller"}}}}'
-  helm init --service-account tiller --upgrade
-  ```
+  web:
+    image: server
+```
 
-**Error:** No persistent volumes available for this claim and no storage class is set.
+**aqua-helm/aqua/charts/enforcer/values.yaml**
+
+```yaml
+  enforcer:
+    image: enforcer
+```
+
+## Installing the Helm chart
+
+```shell
+helm install --namespace aqua --name csp ./aqua
+```
+
+## Complete Initial Deployment
+
+Helm will deploy the Aqua Command Center and accompanying Aqua Enforcers set to audit mode. This process takes approximatle five minutes. The time-consuming part of the deployment is the ELB recognising the containers are available after the deployment. Watching the ELB status in AWS EC2 console is possilbe in the AWS EC2 console. The AWS cli counterpart may be used to poll status as well. Replace the `releaseName (csp)` and `namespace (aqua)` with your variables if you so choose.
+
+>Note: The `helm install` command will output similar commands with these variables pre-populated.
+
+```shell
+EKSELB=$(kubectl get svc csp-web-svc --namespace aqua -o jsonpath="{.status.loadBalancer.ingress[0].hostname}"|sed 's/-.*//')
   
-**Solution:** Most managed Kubernetes deployments do NOT include all possible storage provider variations at setup time. Refer to the official Kubernetes guidance https://kubernetes.io/docs/concepts/storage/storage-classes for your platform. Three primary examples are shown below.
+aws elb describe-instance-health --load-balancer-name $EKSELB
+```
 
-  * Amazon EKS
-    ```yaml
-    kind: StorageClass
-    apiVersion: storage.k8s.io/v1
-    metadata:
-      name: aqua-console-db-data
-    provisioner: kubernetes.io/aws-ebs
-    parameters:
-      type: gp2
-    reclaimPolicy: Retain
-    mountOptions:
-      - debug
-    volumeBindingMode: Immediate
-      ```
+You will see something similar to the below output while waiting for the system to come online.
+
+```shell
+{
+    "InstanceStates": [
+        {
+            "InstanceId": "i-0f90dcf0238b343fb",
+            "State": "OutOfService",
+            "ReasonCode": "ELB",
+            "Description": "Instance registration is still in progress."
+        }
+    ]
+}
+```
+
+When the Instance State is operational, the below output will match.
+
+```shell
+{
+    "InstanceStates": [
+        {
+            "InstanceId": "i-0f90dcf0238b343fb",
+            "State": "InService",
+            "ReasonCode": "ELB",
+            "Description": "Instance registration is still in progress."
+        }
+    ]
+}
+```
+
+## The following four basic steps are necessary to complete deployment
+
+## 1. Backup Auto-Generated Secrets
+
+There are four secrets generated: `admin password, database password, enforcer token` and `registry auth` which is used by the docker pull service account.
+
+By default the Aqua PostgreSQL container utilizes a persistant volume (PVC). When removing the application, this PVC is not deleted along with the other componants in order to save your data.
+In the case of a re-deploy, reloading these secrets will be necessary to access the db files on the reused PVC. It is **very important** to back up the database password secrets for this purpose.
+Please back them up ***now***. See the [ReDeploying Aqua CSP](#ReDeploying-Aqua-CSP) section for redeployment instructions.
+
+```shell
+kubectl get secrets -l secretType=aquaSecurity \
+--namespace aqua -o json > aquaSecrets.json
+```
+
+## 2. Obtain the Aqua Command Center administrator password
+
+The default username is `administrator`. Use `kubectl` to extract the generated password from the secret.
+
+```shell
+kubectl get secret csp-console-secrets --namespace aqua -o json | jq -r .data.admin-password | base64 -D
+```
+
+## 3. Obtain the Aqua Command Center portal information and login
+
+A user may run the following command:
+
+```shell
+AQUA_CONSOLE=$(kubectl get svc csp-web-svc --namespace aqua -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
   
-  * Azure AKS
-    ```yaml
-    kind: StorageClass
-    apiVersion: storage.k8s.io/v1
-    metadata:
-      name: slow
-    provisioner: kubernetes.io/azure-disk
-    parameters:
-      storageaccounttype: Standard_LRS
-      kind: Shared
-    ```
-
-  * Google GKE
-    ```yaml
-    kind: StorageClass
-    apiVersion: storage.k8s.io/v1
-    metadata:
-      name: slow
-    provisioner: kubernetes.io/gce-pd
-    parameters:
-      type: pd-standard
-    replication-type: none
-    ```
-
-### Non-public cloud provider deployments
-
-**Error:** When executing `kubectl get events -n aqua` you might encounter one of the following errors:
-  *no persistent volumes available for this claim and no storage class is set* **or** *PersistentVolumeClaim is not bound*.
-
-**Solution:** If you encounter this error, you need to create a persistent volume prior to chart installation with a generic or existing storage class, specifying `db.persistence.storageClass` within the values.yaml. A sample file using `aqua-storage` is included in the repo. 
-
-  ```sh
-  kubectl apply -f pv-example.yaml
-  ```
-
-* **Creating an ingress to access the Aqua Server**
-* IBM Cloud Private includes a bundled ingress controller. A sample ingress yaml file is included in the repo.
-```sh
-kubectl apply -f ingress-example.yaml
+ECHO "http://$AQUA_CONSOLE:8080"
 ```
 
-* **Alternative Ingress Configuration**
-* The services charts are set to create `ClusterIP' ingress types. You may tune these as appropriate for your environment.
+## 4. Enter the license to enable the product
 
+Users that previously registered for a license token for use with AWS Container Marketplace (PAYG) deployments should enter it to enable the hourly billing of Enforcers. If you do not have a license token, you may request one by filling out the form linked on the Aqua Command Center startup portal.
 
-## Installing the Charts
+>*A note about Aqua CSP for AWS Marketplace licenses*
+>
+>The license issued is specific to the environement. As of this writing an Enterprise license will not enable a deplyment via AWS Container Marketplace or vice versa without changing startup variables. A complete list of startup variables are documented at `https://docs.aquasec.com`
 
-Clone the GitHub repository with the charts
+## View logs of the Aqua Command Center
+
+Sometimes an admin just needs the read some logs. While these are accessible in the Aqua Console under Settings > Logs, should you need to access logs of the Aqua server pod via CLI, use the below command.
+
+```shell
+CONSOLEPOD=$(kubectl get pods -l app=csp-web-svc -n aqua --no-headers -o=custom-columns=NAME:.metadata.name)
+kubectl logs -f ${CONSOLEPOD} --namespace=aqua
+```
+
+## ReDeploying Aqua CSP
+### External PostgreSQL container in use
+
+Redeploying when utilizing an external PostgreSQL is detailed below. One must either edit or replace the secrets that allow the componants to communicate.
+
+1. Backup then Delete your existing secrets and services
+
+```shell
+kubectl get secrets -l secretType=aquaSecurity \
+--namespace aqua -o json > aquaSecrets.json
+
+cat aquaSecrets.json (or use your favorite editor to validate content)
+
+kubectl delete -f aquaSecrets.json
+kubectl delete sa -n aqua csp-sa
+```
+2. Run the helm installer with the `exact same release name`
+
+```shell
+helm install --namespace aqua --name csp ./aqua
+ ```
+
+3. Wait 15 seconds, then re-delete and reapply the secrets from your backup file.
 
 ```bash
-git clone https://github.com/aquasecurity/aqua-helm.git
-cd aqua-helm/
+kubectl delete -f aquaSecrets.json
+kubectl apply -f aquaSecrets.json
+```
+ 
+4. Check the console as in the above installation section [Complete Initial Deployment](#Complete-Initial-Deployment)
+
+### Aqua PostgreSQL container in use
+
+The Aqua provided PostgreSQL container uses a Persistant Volume Claim (PVC) set to `retain` upon `helm delete` in order to safe-guard inadvertant database loss. A [PVC](https://kubernetes.io/docs/concepts/storage/volumes/#creating-an-ebs-volume) is a mechanisim within kubernetes that allows an application to mount a physical volume (PV) as a kubernetes volume. This grants the PV reusability, among other capabilities.
+
+To redeploy Aqua CSP and reattach the previously utilized PV, one may utilize the same cluster, namespace and Helm release name. Doing so will cause kubernetes to attempt to reattach the matching PV. This presents a challenge however due to the *pv.claimRef.uid* that links the PVC to the PV. The PV for security purposes will only allow a *specific* PVC UID to make a claim on itself. The helm chart will also regenerate the necessary secrets. Worse yet, reapplying the wrong backup can cause the database connection from the Aqua console and database containers to fail. To allieviate this particular issue, stage the commands from step number four below in the a shell and run it 20 seconds after redpoluing via `helm install`. Doing so will replace the secrets with the backup values, and allow the console and gateway pods to reconnect to the database.
+
+1. Backup then Delete your existing secrets and services
+
+```shell
+kubectl get secrets -l secretType=aquaSecurity \
+--namespace aqua -o json > aquaSecrets.json
+
+cat aquaSecrets.json (or use your favorite editor to validate content)
+
+kubectl delete -f aquaSecrets.json
+kubectl delete sa -n aqua csp-sa
 ```
 
-***Optional*** Update the Helm charts values.yaml file with your environment's custom values. This eliminates the need to pass the parameters to the helm command. Then run one of the commands below to install the relevant services.
+2. Obtain the PVC information and Helm release name to reuse
 
-### Server (console)
+```shell
+kubectl get pvc -n aqua
+
+NAME               STATUS   VOLUME
+csp-database-pvc   Bound    pvc-df93aca6-d6fa-11e8-a39b-0a14904e5754
+```
+
+3. Delete the PVC
+
+```shell
+kubectl delete pvc -n aqua csp-database-pvc
+```
+
+4. Obtain the PV name
+
+```shell
+kubectl get pv -n aqua
+
+NAME                                     CAPACITY ACCESS MODES RECLAIM POLICY STATUS  
+pvc-df93aca6-d6fa-11e8-a39b-0a14904e5754 50Gi     RWO          Retain         Released
+```
+
+>Note: If the status is anything other then `Released` at this point stop and retrace your steps as it'll be difficult to procede.
+
+4. Edit the PV to `unlock` the dynamically generated PVC UID that is specified.
+
+```shell
+
+kubectl edit pv -n aqua pvc-df93aca6-d6fa-11e8-a39b-0a14904e5754
+
+"""Dynamic Example"""
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: csp-database-pvc
+    namespace: aqua
+    resourceVersion: "931154"
+    uid: df93aca6-d6fa-11e8-a39b-0a14904e5754
+
+"""Reused, existing PV example"""
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: csp-database-pvc
+    namespace: aqua
+    resourceVersion: "931154"
+    uid:
+```
+
+5. Check that the status of the PV has changed to `Available`
+
+```shell
+NAME                                     CAPACITY ACCESS MODES RECLAIM POLICY STATUS  
+pvc-df93aca6-d6fa-11e8-a39b-0a14904e5754 50Gi     RWO          Available         Released
+```
+
+6. Run the helm installer with the `exact same release name`
+
+```shell
+helm install --namespace aqua --name csp ./aqua
+ ```
+
+7. Wait 15 seconds, then reapply the secrets from your backup file.
 
 ```bash
-helm upgrade --install --namespace aqua csp ./server --set imageCredentials.username=<>,imageCredentials.password=<>,imageCredentials.email=<>
+kubectl apply -f aquaSecrets.json
+```
+ 
+8. Check the console as in the above installation section [Complete Initial Deployment](#Complete-Initial-Deployment)
+
+## Uninstalling Aqua CSP
+
+Uninstalling the Aqua CSP and all componants may be performed by the following functions:
+
+Delete the helm release
+
+```shell
+Helm delete csp
 ```
 
-### Enforcer
+Delete the namespace
 
-```bash
-helm upgrade --install --namespace aqua csp-enforcer ./enforcer --set imageCredentials.username=<>,imageCredentials.password=<>,imageCredentials.email=<>,enforcerToken=<aquasec-token>
+```shell
+kubectl delete ns aqua
 ```
 
-### Scanner
-
-```bash
-helm upgrade --install --namespace aqua scanner ./scanner --set imageCredentials.username=<>,imageCredentials.password=<>,imageCredentials.email=<>
-```
-
-## Configurable Variables
-
-The following table lists the configurable parameters of the Console and Enforcer charts with their default values.
-
-### Console
-
-| Parameter                         | Description                          | Default                                                                      |
-| --------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------- |
-| `imageCredentials.create`               | Set if to create new pull image secret    | `true`                                                                 |
-| `imageCredentials.name`               | Your Docker pull image secret name    | `csp-registry-secret`                                                                   |
-| `imageCredentials.username`               | Your Docker registry (DockerHub, etc.) username    | `N/A`                                                                   |
-| `imageCredentials.password`               | Your Docker registry (DockerHub, etc.) password    | `N/A`                                                                   |
-| `rbac.enabled`                    | Create a service account and a ClusterRole    | `false`                                                                   |
-| `rbac.roleRef`                    | Use an existing ClusterRole    | ``                                                                   |
-| `admin.token`                    | Use this Aqua license token   | `N/A`                                                                   |
-| `admin.password`                    | Use this Aqua admin password   | `N/A`                                                                  |
-| `db.external.enabled`             | Avoid installing a Postgres container and use an external database instead    | `false`                          |
-| `db.external.name`                | PostgreSQL DB name    | ``N/A``                                        |
-| `db.external.host`                | PostgreSQL DB hostname    | ``N/A``                                        |
-| `db.external.port`                | PostgreSQL DB port    | `N/A`                                        |
-| `db.external.user`                | PostgreSQL DB username    | `N/A`                                        |
-| `db.external.password`            | PostgreSQL DB password    | `N/A`                                        |
-| `db.image.repository`                   | Default PostgreSQL Docker image repository    | `database`                                        |
-| `db.image.tag`                    | Default PostgreSQL Docker image tag    | `4.2`                                        |
-| `db.service.type`                      | Default PostgreSQL service type    | `ClusterIP`                                        |
-| `db.persistence.enabled`          | Enable a use of a PostgreSQL PVC    | `true`                                        |
-| `db.persistence.storageClass`     | PostgreSQL PVC StorageClass   | `default`                                        |
-| `db.persistence.size`             | PostgreSQL PVC volume size  | `30Gi`                                        |
-| `db.persistence.accessMode`       | PostgreSQL PVC volume AccessMode  | `ReadWriteOnce`                                        |
-| `db.resources`       | PostgreSQL pod resources  | `{}`                                        |
-| `web.service.type`                | Web service type  | `ClusterIP`                                        |
-| `web.ingress.enabled`             | Install ingress for the web component  | `false`                                        |
-| `web.image.repository`                   | Default Web Docker image repository    | `server`                                        |
-| `web.image.tag`                    | Default Web Docker image tag    | `4.2`                                        |
-| `web.ingress.annotations`         | Web ingress annotations  | `{}`                                        |
-| `web.ingress.hosts`               | Web ingress hosts definition  | `[]`                                        |
-| `web.ingress.tls`                 | Web ingress tls  | `[]`                                        |
-| `gate.service.type`                | Gate service type  | `ClusterIP`                                        |
-| `gate.image.repository`                   | Default Gate Docker image repository    | `gate`                                        |
-| `gate.image.tag`                    | Default Gate Docker image tag    | `4.2`                                        |
-| `gate.publicIP`                    | Default Gate service public IP    | ``                                        |
-| `scanner.enabled`                 | Enable the Scanner-CLI component  | `false`                                        |
-| `scanner.replicas`                | Number of Scanner-CLI replicas to run  | `1`                                        |
-| `scanner.user`                | Username for the scanner user assigned to the Scanner role  | `N/A`                                        |
-| `scanner.password`                | Password for scanner user  | `N/A`                                        |
-
-
-### Enforcer
-
-| Parameter                         | Description                          | Default                                                                      |
-| --------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------- |
-| `imageCredentials.create`               | Set if to create new pull image secret    | `false`                                                                 |
-| `imageCredentials.name`               | Your Docker pull image secret name    | `aqua-image-pull-secret`                                                                   |
-| `imageCredentials.username`               | Your Docker registry (DockerHub, etc.) username    | `N/A`                                                                   |
-| `imageCredentials.password`               | Your Docker registry (DockerHub, etc.) password    | `N/A`                                                                   |
-| `enforcerToken`                           | Aqua Enforcer token    | `N/A`                                                     |
-| `server`                          | Gateway host name    | `aqua-gateway`                                                     |
-| `port`                            | Gateway port    | `3622`                                                     |
-
-
-### Scanner
-
-| Parameter                         | Description                          | Default                                                                      |
-| --------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------- |
-| `rbac.enabled`                    | Create a service account and a ClusterRole    | `false`                                                                   |
-| `rbac.roleRef`                    | Use an existing ClusterRole    | ``                                                                   |
-| `admin.token`                    | Use this Aqua license token   | `N/A`                                                                   |
-| `admin.password`                    | Use this Aqua admin password   | `N/A`                                                                  |
-| `docker.socket.path`                    | Docker Socket Path   | `/var/run/docker.sock`                                                                  |
-| `serviceAccount`                    | Service Account to use   | `csp-sa`                                                                  |
-| `server.serviceName`                    | Service name of aqua server ui   | `csp-consul-svc`                                                                  |
-| `server.port`                    | service svc port   | `8080`                                                                  |
-| `docker.socket.path`                    | Docker Socket Path   | `/var/run/docker.sock`                                                                  |
-| `docker.socket.path`                    | Docker Socket Path   | `/var/run/docker.sock`                                                                  |
-| `enabled`                 | Enable the Scanner-CLI component  | `false`                                        |
-| `replicaCount`                | Number of Scanner-CLI replicas to run  | `1`                                        |
-| `user`                | Username for the scanner user assigned to the Scanner role  | `N/A`                                        |
-| `password`                | Password for scanner user  | `N/A`                                        |
-
+Remove any EBS volumes via the AWS CLI or Console
 
 ## Support
 
 If you encounter any problems or would like to give us feedback on deployments, we encourage you to raise issues here on GitHub please contact us at https://github.com/aquasecurity.
+
+

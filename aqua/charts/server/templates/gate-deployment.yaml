@@ -1,0 +1,64 @@
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-gateway
+  labels:
+    app: {{ .Release.Name }}-gateway
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}"
+    release: "{{ .Release.Name }}"
+    heritage: "{{ .Release.Service }}"
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-gateway
+      name: {{ .Release.Name }}-gateway
+    spec:
+      serviceAccount: {{ .Release.Name }}-sa
+      containers:
+      - name: gate
+        image: "{{ .Values.global.imageCredentials.registry }}/{{ .Values.gate.image }}:{{ .Values.global.image.tag }}"
+        imagePullPolicy: "{{ .Values.global.image.pullPolicy }}"
+        env:
+        - name: AQUA_CONSOLE_SECURE_ADDRESS
+          value: "{{ .Release.Name }}-console-svc:443"
+        - name: SCALOCK_GATEWAY_PUBLIC_IP
+          value: "aqua-gateway-svc"
+        - name: SCALOCK_DBUSER
+          value: {{ .Values.global.db.external.enabled | ternary .Values.global.db.external.username "postgres" | quote }}
+        - name: SCALOCK_DBPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Release.Name }}-database-password
+              key: db-password
+        - name: SCALOCK_DBNAME
+          value: "scalock"
+        - name: SCALOCK_DBHOST
+          {{- if .Values.global.db.external.enabled }}
+          value: {{ .Values.global.db.external.host }}
+          {{- else }}
+          value: {{ .Release.Name }}-database-svc
+          {{- end }}
+        - name: SCALOCK_DBPORT
+          value: {{ .Values.global.db.external.enabled | ternary .Values.global.db.external.port "5432" | quote }}
+        - name: SCALOCK_AUDIT_DBUSER
+          value: {{ .Values.db.external.enabled | ternary .Values.db.external.username "postgres" }}
+        - name: SCALOCK_AUDIT_DBPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Release.Name }}-database-password
+              key: db-password
+        - name: SCALOCK_AUDIT_DBNAME
+          value: "slk_audit"
+        - name: SCALOCK_AUDIT_DBHOST
+          {{- if .Values.global.db.external.enabled }}
+          value: {{ .Values.global.db.external.host }}
+          {{- else }}
+          value: {{ .Release.Name }}-database-svc
+          {{- end }}
+        - name: SCALOCK_AUDIT_DBPORT
+          value: {{ .Values.global.db.external.enabled | ternary .Values.global.db.external.port "5432" | quote }}
+        ports:
+        - containerPort: {{ default 3622 .Values.gate.service.containerPort }}
+          protocol: TCP

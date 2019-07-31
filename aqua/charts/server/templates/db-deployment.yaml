@@ -1,0 +1,44 @@
+{{- if not .Values.global.db.external.enabled }}
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-database
+  labels:
+    app: {{ .Release.Name }}-database
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}"
+    release: "{{ .Release.Name }}"
+    heritage: "{{ .Release.Service }}"
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-database
+      name: {{ .Release.Name }}-database
+    spec:
+      serviceAccount: {{ .Release.Name }}-sa
+      containers:
+      - name: db
+        image: "{{ .Values.global.imageCredentials.registry }}/{{ .Values.db.image }}:{{ .Values.global.image.tag }}"
+        imagePullPolicy: "{{ .Values.global.image.pullPolicy }}"
+        env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Release.Name }}-database-password
+              key: db-password
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/db-files"
+        - name: POD_IP
+          valueFrom: { fieldRef: { fieldPath: status.podIP } }
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: postgres-database
+        ports:
+        - containerPort: {{ .Values.db.service.containerPort }}
+          protocol: TCP
+      volumes:
+      - name: postgres-database
+        persistentVolumeClaim:
+          claimName: {{ .Release.Name }}-database-pvc
+{{- end }}

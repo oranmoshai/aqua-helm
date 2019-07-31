@@ -1,0 +1,19 @@
+---
+
+db:
+  image: marketplace-database
+  service:
+    containerPort: 5432
+    servicePort: 5432
+
+gate:
+  image: marketplace-gateway
+  service:
+    containerPort: 3622
+    servicePort: 3622
+
+web:
+  image: marketplace-console
+  service:
+    containerPort: 8080
+    servicePort: 8080
