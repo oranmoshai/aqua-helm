@@ -57,12 +57,13 @@ spec:
           {{- end }}
         - name: SCALOCK_AUDIT_DBPORT
           value: {{ .Values.global.db.external.enabled | ternary .Values.global.db.external.port "5432" | quote }}
+        {{- if .Values.global.admin.token }}
         - name: LICENSE_TOKEN
           valueFrom:
             secretKeyRef:
               name: {{ .Release.Name }}-console-secrets
               key: license-token
-          {{- end }}
+        {{- end }}
         - name: ADMIN_PASSWORD
           valueFrom:
             secretKeyRef:
