@@ -45,7 +45,7 @@ This helm chart includes an Aqua provided PostgreSQL database container for smal
 ```yaml
 db:
   external:
-      enable: true
+      enabled: true
       host: "<myserver>.CB2XKFSFFMY7.US-WEST-2.RDS.AMAZONAWS.COM"
       username: "postgres"
       password: <Password>

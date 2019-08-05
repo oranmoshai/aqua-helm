@@ -6,6 +6,7 @@ metadata:
   name: {{ .Release.Name }}-database-svc
   labels:
     app: {{ .Release.Name }}-database
+    component: {{ template "fullname" . }}
     chart: "{{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}"
     release: "{{ .Release.Name }}"
     heritage: "{{ .Release.Service }}"

@@ -1,5 +1,4 @@
 apiVersion: v1
-appVersion: "4.2"
 description: A Helm chart for the Aqua Enforcer
 name: enforcer
 version: 4.2.0

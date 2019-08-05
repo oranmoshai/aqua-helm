@@ -5,6 +5,7 @@ metadata:
   name: {{ .Release.Name }}-console
   labels:
     app: {{ .Release.Name }}-console
+    component: {{ template "fullname" . }}
     chart: "{{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}"
     release: "{{ .Release.Name }}"
     heritage: "{{ .Release.Service }}"
@@ -24,7 +25,11 @@ spec:
         - name: SCALOCK_GATEWAY_PUBLIC_IP
           value: "aqua-gateway-svc"
         - name: SCALOCK_DBUSER
-          value: {{ .Values.global.db.external.enabled | ternary .Values.global.db.external.username "postgres" | quote }}
+          {{- if .Values.global.db.external.enabled }}
+          value: {{ .Values.global.db.external.username }}
+          {{- else }}
+          value: "postgres"
+          {{- end }}
         - name: SCALOCK_DBPASSWORD
           valueFrom:
             secretKeyRef:
@@ -39,9 +44,17 @@ spec:
           value: {{ .Release.Name }}-database-svc
           {{- end }}
         - name: SCALOCK_DBPORT
-          value: {{ .Values.global.db.external.enabled | ternary .Values.global.db.external.port "5432" | quote }}
+          {{- if .Values.global.db.external.enabled }}
+          value: {{ .Values.global.db.external.port }}
+          {{- else }}
+          value: "5432"
+          {{- end }}
         - name: SCALOCK_AUDIT_DBUSER
-          value: {{ .Values.db.external.enabled | ternary .Values.db.external.username "postgres" }}
+          {{- if .Values.global.db.external.enabled }}
+          value: {{ .Values.global.db.external.username }}
+          {{- else }}
+          value: "postgres"
+          {{- end }}
         - name: SCALOCK_AUDIT_DBPASSWORD
           valueFrom:
             secretKeyRef:
@@ -56,14 +69,18 @@ spec:
           value: {{ .Release.Name }}-database-svc
           {{- end }}
         - name: SCALOCK_AUDIT_DBPORT
-          value: {{ .Values.global.db.external.enabled | ternary .Values.global.db.external.port "5432" | quote }}
-        {{- if .Values.global.admin.token }}
+          {{- if .Values.global.db.external.enabled }}
+          value: {{ .Values.global.db.external.port }}
+          {{- else }}
+          value: "5432"
+          {{- end }}
+          {{- if .Values.global.admin.token }}
         - name: LICENSE_TOKEN
           valueFrom:
             secretKeyRef:
               name: {{ .Release.Name }}-console-secrets
               key: license-token
-        {{- end }}
+          {{- end }}
         - name: ADMIN_PASSWORD
           valueFrom:
             secretKeyRef:

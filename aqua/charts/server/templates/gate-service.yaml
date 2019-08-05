@@ -5,6 +5,7 @@ metadata:
   name: {{ .Release.Name }}-gateway-svc
   labels:
     app: {{ .Release.Name }}-gateway
+    component: {{ template "fullname" . }}
     chart: "{{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}"
     release: "{{ .Release.Name }}"
     heritage: "{{ .Release.Service }}"

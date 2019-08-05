@@ -1,10 +1,10 @@
----
 apiVersion: extensions/v1beta1
 kind: DaemonSet
 metadata:
   name: {{ .Release.Name }}-ds
   labels:
     app: {{ .Release.Name }}-ds
+    component: {{ template "fullname" . }}
     chart: "{{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}"
     release: "{{ .Release.Name }}"
     heritage: "{{ .Release.Service }}"
@@ -36,7 +36,7 @@ spec:
         - name: RESTART_CONTAINERS
           value: "no"
         - name: AQUA_RUN_WATCHER
-          Value: "yes"
+          value: "yes"
         volumeMounts:
         - mountPath: /var/run
           name: var-run
